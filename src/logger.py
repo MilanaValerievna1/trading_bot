@@ -16,9 +16,20 @@ class BotLogger:
             filename=os.path.join(LOG_DIR, 'bot_activity.log'),
             level=logging.INFO,
             format='%(asctime)s - %(levelname)s - %(message)s',
-            encoding='utf-8'
+            encoding='utf-8',
+            filemode='a'
         )
         self.logger = logging.getLogger('bot_logger')
+        
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.INFO)
+        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        console_handler.setFormatter(formatter)
+        
+        if hasattr(console_handler.stream, 'reconfigure'):
+            console_handler.stream.reconfigure(encoding='utf-8')
+        
+        self.logger.addHandler(console_handler)
 
     def log_event(self, event_type, details):
         timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')

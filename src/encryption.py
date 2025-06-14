@@ -26,7 +26,6 @@ def decrypt_data(encrypted_data, key):
     fernet = Fernet(key)
     return fernet.decrypt(encrypted_data).decode()
 
-# Пример использования:
 key = generate_key()
 save_key(key)
 encrypted_api_key = encrypt_data("YOUR_API_KEY", key)

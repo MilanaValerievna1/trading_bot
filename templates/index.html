@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Торговый терминал</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { display: flex; flex-wrap: wrap; gap: 20px; }
+        .panel { border: 1px solid #ddd; padding: 15px; border-radius: 5px; width: 45%; }
+        .chart-container { height: 300px; }
+        button { padding: 8px 15px; margin: 5px; cursor: pointer; }
+        select, input { padding: 8px; margin: 5px; }
+    </style>
+</head>
+<body>
+    <h1>Торговый терминал</h1>
+    
+    <div class="container">
+        <div class="panel">
+            <h2>Баланс</h2>
+            <div id="balance"></div>
+        </div>
+        
+        <div class="panel">
+            <h2>График</h2>
+            <select id="exchange-select" onchange="loadPairs('pair-select', this.value)">
+                <option value="bybit">Bybit</option>
+                <option value="okx">OKX</option>
+            </select>
+            <select id="pair-select"></select>
+            <select id="interval-select" onchange="updateChart()">
+                <option value="15m">15 мин</option>
+                <option value="1h">1 час</option>
+                <option value="4h">4 часа</option>
+                <option value="1d">1 день</option>
+            </select>
+            <button onclick="updateChart()">Обновить</button>
+            <div class="chart-container">
+                <canvas id="price-chart"></canvas>
+            </div>
+        </div>
+        
+        <div class="panel">
+            <h2>Торговля</h2>
+            <select id="trade-exchange" onchange="loadPairs('trade-pair', this.value)">
+                <option value="bybit">Bybit</option>
+                <option value="okx">OKX</option>
+            </select>
+            <select id="trade-pair"></select>
+            <input type="number" id="trade-amount" placeholder="Сумма" step="0.01">
+            <button onclick="placeOrder('buy')">Купить</button>
+            <button onclick="placeOrder('sell')">Продать</button>
+            <div id="trade-result"></div>
+        </div>
+        
+        <div class="panel">
+            <h2>Позиции</h2>
+            <div id="positions"></div>
+        </div>
+    </div>
+
+
+    <script>
+        let priceChart;
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            loadPairs('pair-select', 'bybit');
+            loadPairs('trade-pair', 'bybit');
+            updateBalance();
+            updatePositions();
+            updateChart(); 
+        });
+        
+        async function loadPairs(selectId, exchange) {
+            try {
+                const response = await axios.get(`/pairs?exchange=${exchange}`);
+                const pairs = response.data;
+                
+                const pairSelect = document.getElementById(selectId);
+                pairSelect.innerHTML = pairs.map(pair => 
+                    `<option value="${pair}">${pair}</option>`
+                ).join('');
+                
+                if (selectId === 'pair-select') {
+                    updateChart();
+                }
+            } catch (error) {
+                console.error(`Ошибка при загрузке пар для биржи ${exchange}:`, error);
+            }
+        }
+        
+        async function updateBalance() {
+            const response = await axios.get('/balance');
+            const data = response.data;
+            
+            let html = '<h3>Bybit</h3>';
+            html += `<p>Общий баланс: ${data.bybit.total} USDT</p>`;
+            html += '<ul>' + Object.entries(data.bybit.coins).map(([coin, amount]) => 
+                `<li>${coin}: ${amount}</li>`
+            ).join('') + '</ul>';
+            
+            html += '<h3>OKX</h3>';
+            html += `<p>Общий баланс: ${data.okx.total} USDT</p>`;
+            html += '<ul>' + Object.entries(data.okx.coins).map(([coin, amount]) => 
+                `<li>${coin}: ${amount}</li>`
+            ).join('') + '</ul>';
+            
+            document.getElementById('balance').innerHTML = html;
+        }
+        
+        async function updateChart() {
+            const exchange = document.getElementById('exchange-select').value;
+            const pair = document.getElementById('pair-select').value;
+            const interval = document.getElementById('interval-select').value;
+            
+            if (!pair) {
+                console.log('Пара не выбрана, пропускаем обновление графика');
+                return;
+            }
+            
+            try {
+                const response = await axios.get(`/chart?exchange=${exchange}&pair=${pair}&interval=${interval}`);
+                const data = response.data;
+                
+                const ctx = document.getElementById('price-chart').getContext('2d');
+                
+                if (priceChart) {
+                    priceChart.destroy();
+                }
+                
+                priceChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: data.labels,
+                        datasets: [
+                            {
+                                label: 'Цена открытия',
+                                data: data.open,
+                                borderColor: 'rgb(75, 192, 192)',
+                                tension: 0.1
+                            },
+                            {
+                                label: 'Цена закрытия',
+                                data: data.close,
+                                borderColor: 'rgb(255, 99, 132)',
+                                tension: 0.1
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: {
+                                beginAtZero: false
+                            }
+                        }
+                    }
+                });
+            } catch (error) {
+
+                console.error('Ошибка при обновлении графика:', error);
+            }
+        }
+
+        async function placeOrder(side) {
+            const exchange = document.getElementById('trade-exchange').value;
+            const pair = document.getElementById('trade-pair').value;
+            const amount = parseFloat(document.getElementById('trade-amount').value);
+            
+            if (!amount || isNaN(amount) || amount <= 0) {
+                document.getElementById('trade-result').innerHTML = 'Введите корректную сумму (положительное число)';
+                return;
+            }
+            
+            try {
+                const response = await axios.post('/trade', {
+                    exchange,
+                    pair,
+                    side,
+                    amount: amount 
+                });
+                
+                document.getElementById('trade-result').innerHTML = `Результат: ${response.data.result}`;
+                updateBalance();
+                updatePositions();
+            } catch (error) {
+                document.getElementById('trade-result').innerHTML = `Ошибка: ${error.response?.data?.message || error.message}`;
+            }
+        }
+
+        async function updatePositions() {
+            const response = await axios.get('/balance');
+            const data = response.data;
+            
+            let html = '<h3>Bybit</h3>';
+            if (data.bybit.positions.length > 0) {
+                html += '<ul>' + data.bybit.positions.map(pos => 
+                    `<li>${pos[0]}: ${pos[2]} по цене ${pos[1]}</li>`
+                ).join('') + '</ul>';
+            } else {
+                html += '<p>Нет открытых позиций</p>';
+            }
+            
+            html += '<h3>OKX</h3>';
+            if (data.okx.positions.length > 0) {
+                html += '<ul>' + data.okx.positions.map(pos => 
+                    `<li>${pos[0]}: ${pos[2]} по цене ${pos[1]}</li>`
+                ).join('') + '</ul>';
+            } else {
+                html += '<p>Нет открытых позиций</p>';
+            }
+            
+            document.getElementById('positions').innerHTML = html;
+        }
+    </script>
+</body>
+</html>
